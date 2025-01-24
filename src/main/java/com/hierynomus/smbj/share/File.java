@@ -18,6 +18,7 @@ package com.hierynomus.smbj.share;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -39,6 +40,7 @@ import com.hierynomus.smbj.ProgressListener;
 import com.hierynomus.smbj.common.SMBRuntimeException;
 import com.hierynomus.smbj.common.SmbPath;
 import com.hierynomus.smbj.io.ArrayByteChunkProvider;
+import com.hierynomus.smbj.io.ByteBufferByteChunkProvider;
 import com.hierynomus.smbj.io.ByteChunkProvider;
 
 public class File extends DiskEntry {
@@ -57,7 +59,7 @@ public class File extends DiskEntry {
      * @param fileOffset The offset, in bytes, into the file to which the data should be written
      * @return the actual number of bytes that was written to the file
      */
-    public int write(byte[] buffer, long fileOffset) {
+    public long write(byte[] buffer, long fileOffset) {
         return writer.write(buffer, fileOffset);
     }
 
@@ -70,7 +72,7 @@ public class File extends DiskEntry {
      * @param length     the number of bytes that are written
      * @return the actual number of bytes that was written to the file
      */
-    public int write(byte[] buffer, long fileOffset, int offset, int length) {
+    public long write(byte[] buffer, long fileOffset, int offset, int length) {
         return writer.write(buffer, fileOffset, offset, length);
     }
 
@@ -81,7 +83,7 @@ public class File extends DiskEntry {
      * @param provider the byte chunk provider
      * @return the actual number of bytes that was written to the file
      */
-    public int write(ByteChunkProvider provider) {
+    public long write(ByteChunkProvider provider) {
         return writer.write(provider);
     }
 
@@ -93,7 +95,7 @@ public class File extends DiskEntry {
      * @param progressListener an optional callback that will be invoked when data has been written to the file
      * @return the actual number of bytes that was written to the file
      */
-    public int write(ByteChunkProvider provider, ProgressListener progressListener) {
+    public long write(ByteChunkProvider provider, ProgressListener progressListener) {
         return writer.write(provider, progressListener);
     }
 
@@ -105,7 +107,7 @@ public class File extends DiskEntry {
      * @param length     the number of bytes that are written
      * @return A Future containing the total number of bytes written to the remote.
      */
-    public Future<Integer> writeAsync(byte[] buffer, long fileOffset, int offset, int length) {
+    public Future<Long> writeAsync(byte[] buffer, long fileOffset, int offset, int length) {
         return writer.writeAsync(buffer, fileOffset, offset, length);
     }
 
@@ -116,7 +118,7 @@ public class File extends DiskEntry {
      * @param provider the byte chunk provider
      * @return A future containing the total number of bytes written to the remote.
      */
-    public Future<Integer> writeAsync(ByteChunkProvider provider) {
+    public Future<Long> writeAsync(ByteChunkProvider provider) {
         return writer.writeAsync(provider);
     }
 
@@ -184,6 +186,40 @@ public class File extends DiskEntry {
             destStream.write(buf, 0, numRead);
         }
         is.close();
+    }
+
+    /**
+     * Write the data in a {@link ByteBuffer} to this file at position fileOffset.
+     *
+     * @param buffer     the data to write
+     * @param fileOffset The offset, in bytes, into the file to which the data should be written
+     * @return the actual number of bytes that was written to the file
+     */
+    public long write(ByteBuffer buffer, long fileOffset) {
+        ByteChunkProvider provider = new ByteBufferByteChunkProvider(buffer, fileOffset);
+        return write(provider);
+    }
+
+
+    /**
+     * Read data from this file starting at position fileOffset into the given {@link ByteBuffer}.
+     *
+     * @param buffer     the {@link ByteBuffer} to write into
+     * @param fileOffset The offset, in bytes, into the file from which the data should be read
+     * @return the actual number of bytes that were read; or -1 if the end of the file was reached
+     */
+    public long read(ByteBuffer buffer, long fileOffset) {
+        int remaining = buffer.remaining();
+
+        SMB2ReadResponse response = share.read(fileId, fileOffset, remaining);
+        if (response.getHeader().getStatusCode() == NtStatus.STATUS_END_OF_FILE.getValue()) {
+            return -1;
+        } else {
+            byte[] data = response.getData();
+            int bytesRead = Math.min(remaining, data.length);
+            buffer.put(data, 0, bytesRead);
+            return bytesRead;
+        }
     }
 
     /**

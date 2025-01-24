@@ -80,13 +80,13 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
     private SessionTable preauthSessionTable = new SessionTable();
     OutstandingRequests outstandingRequests = new OutstandingRequests();
     SequenceWindow sequenceWindow;
-    private SMB2MessageConverter smb2Converter = new SMB2MessageConverter();
+    private SMB2MessageConverter messageConverter = new SMB2MessageConverter();
     private PathResolver pathResolver;
 
     private final SMBClient client;
     final ServerList serverList;
 
-    private PacketSignatory signatory;
+    private Signatory signatory;
     private PacketEncryptor encryptor;
 
     public SMBClient getClient() {
@@ -110,7 +110,12 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
     private void init() {
         bus.subscribe(this);
         this.sequenceWindow = new SequenceWindow();
-        this.signatory = new PacketSignatory(config.getSecurityProvider());
+        if (config.isSigningEnabled()) {
+            this.signatory = new PacketSignatory(config.getSecurityProvider());
+        } else {
+            logger.warn("Signing is disabled for this connection.");
+            this.signatory = new NoSignatory();
+        }
         this.encryptor = new PacketEncryptor(config.getSecurityProvider());
 
         this.packetHandlerChain = new SMB3DecryptingPacketHandler(sessionTable, encryptor).setNext(
@@ -119,7 +124,7 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
                     new SMB2SignatureVerificationPacketHandler(sessionTable, signatory).setNext(
                         new SMB2CreditGrantingPacketHandler(sequenceWindow).setNext(
                             new SMB2AsyncResponsePacketHandler(outstandingRequests).setNext(
-                                new SMB2ProcessResponsePacketHandler(smb2Converter, outstandingRequests).setNext(
+                                new SMB2ProcessResponsePacketHandler(messageConverter, outstandingRequests).setNext(
                                     new SMB1PacketHandler().setNext(new DeadLetterPacketHandler()))))))));
     }
 
@@ -139,7 +144,6 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
         transport.connect(new InetSocketAddress(hostname, port));
         this.connectionContext = new ConnectionContext(config.getClientGuid(), hostname, port, config);
         new SMBProtocolNegotiator(this, config, connectionContext).negotiateDialect();
-        this.signatory.init();
         this.encryptor.init(connectionContext);
 
         this.pathResolver = new SymlinkPathResolver(PathResolver.LOCAL);
@@ -210,10 +214,11 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
      * @throws TransportException When a transport level error occurred
      */
     public <T extends SMB2Packet> Future<T> send(SMB2Packet packet) throws TransportException {
-        lock.lock();
         Future<T> f = null;
-        try {
-            if (!(packet.getPacket() instanceof SMB2Cancel)) {
+        if (!(packet.getPacket() instanceof SMB2Cancel)) {
+            // Need to lock around the sequence window calls to ensure no credits get stolen by another thread
+            lock.lock();
+            try {
                 int availableCredits = sequenceWindow.available();
                 int grantCredits = calculateGrantedCredits(packet, availableCredits);
                 if (availableCredits == 0) {
@@ -223,19 +228,19 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
                 }
                 long[] messageIds = sequenceWindow.get(grantCredits);
                 packet.getHeader().setMessageId(messageIds[0]);
+                packet.getHeader().setCreditRequest(Math.max(SequenceWindow.PREFERRED_MINIMUM_CREDITS - availableCredits - grantCredits,
+                        grantCredits));
                 logger.debug("Granted {} (out of {}) credits to {}", grantCredits, availableCredits, packet);
-                packet.getHeader().setCreditRequest(Math
-                    .max(SequenceWindow.PREFERRED_MINIMUM_CREDITS - availableCredits - grantCredits, grantCredits));
-
-                Request request = new Request(packet.getPacket(), messageIds[0], UUID.randomUUID());
-                outstandingRequests.registerOutstanding(request);
-                f = request.getFuture(new CancelRequest(request, packet.getHeader().getSessionId()));
+            } finally {
+                lock.unlock();
             }
-            transport.write(packet);
-            return f;
-        } finally {
-            lock.unlock();
+
+            Request request = new Request(packet.getPacket(), packet.getHeader().getMessageId(), UUID.randomUUID());
+            outstandingRequests.registerOutstanding(request);
+            f = request.getFuture(new CancelRequest(request, packet.getHeader().getSessionId()));
         }
+        transport.write(packet);
+        return f;
     }
 
     <T extends SMB2Packet> T sendAndReceive(SMB2Packet packet) throws TransportException {
@@ -356,8 +361,11 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
 
         /**
          * [MS-SMB2] 3.2.4.24 Application Requests Canceling an Operation
+         *
+         * No status is returned to the application for the cancel request.
          */
         @Override
+        @SuppressWarnings("FutureReturnValueIgnored")
         public void cancel() {
             SMB2Cancel cancel = new SMB2Cancel(connectionContext.getNegotiatedProtocol().getDialect(),
                 sessionId,
@@ -365,7 +373,6 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
                 request.getAsyncId());
             try {
                 sessionTable.find(sessionId).send(cancel);
-                // transport.write(cancel);
             } catch (TransportException e) {
                 logger.error("Failed to send {}", cancel);
             }
@@ -378,5 +385,9 @@ public class Connection extends Pooled<Connection> implements Closeable, PacketR
 
     SessionTable getPreauthSessionTable() {
         return preauthSessionTable;
+    }
+
+    public void setMessageConverter(SMB2MessageConverter smb2Converter) {
+        this.messageConverter = smb2Converter;
     }
 }

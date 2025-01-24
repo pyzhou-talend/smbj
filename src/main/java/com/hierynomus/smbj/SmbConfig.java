@@ -15,13 +15,32 @@
  */
 package com.hierynomus.smbj;
 
+import static com.hierynomus.mssmb2.SMB2Dialect.SMB_2_0_2;
+import static com.hierynomus.mssmb2.SMB2Dialect.SMB_2_1;
+import static com.hierynomus.mssmb2.SMB2Dialect.SMB_3_0;
+import static com.hierynomus.mssmb2.SMB2Dialect.SMB_3_0_2;
+import static com.hierynomus.mssmb2.SMB2Dialect.SMB_3_1_1;
+
+import java.lang.reflect.InvocationTargetException;
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
+import javax.net.SocketFactory;
+
 import com.hierynomus.mssmb2.SMB2Dialect;
 import com.hierynomus.mssmb2.SMB2GlobalCapability;
+import com.hierynomus.ntlm.NtlmConfig;
 import com.hierynomus.protocol.commons.Factory;
 import com.hierynomus.protocol.commons.socket.ProxySocketFactory;
 import com.hierynomus.security.SecurityProvider;
 import com.hierynomus.security.bc.BCSecurityProvider;
-import com.hierynomus.security.jce.JceSecurityProvider;
 import com.hierynomus.smb.SMBPacket;
 import com.hierynomus.smb.SMBPacketData;
 import com.hierynomus.smbj.auth.Authenticator;
@@ -29,13 +48,6 @@ import com.hierynomus.smbj.auth.NtlmAuthenticator;
 import com.hierynomus.smbj.common.SMBRuntimeException;
 import com.hierynomus.smbj.transport.TransportLayerFactory;
 import com.hierynomus.smbj.transport.tcp.direct.DirectTcpTransportFactory;
-
-import javax.net.SocketFactory;
-import java.security.SecureRandom;
-import java.util.*;
-import java.util.concurrent.TimeUnit;
-
-import static com.hierynomus.mssmb2.SMB2Dialect.*;
 
 public final class SmbConfig {
     private static final int DEFAULT_BUFFER_SIZE = 1024 * 1024;
@@ -66,6 +78,7 @@ public final class SmbConfig {
     private Random random;
     private UUID clientGuid;
     private boolean signingRequired;
+    private boolean signingEnabled;
     private boolean dfsEnabled;
     private boolean useMultiProtocolNegotiate;
     private SecurityProvider securityProvider;
@@ -78,7 +91,7 @@ public final class SmbConfig {
     private long transactTimeout;
     private GSSContextConfig clientGSSContextConfig;
     private boolean encryptData;
-    private String workStationName;
+    private NtlmConfig ntlmConfig;
 
     private int soTimeout;
 
@@ -87,23 +100,29 @@ public final class SmbConfig {
     }
 
     public static Builder builder() {
-        return new Builder()
-            .withClientGuid(UUID.randomUUID())
-            .withRandomProvider(new SecureRandom())
-            .withSecurityProvider(getDefaultSecurityProvider())
-            .withSocketFactory(new ProxySocketFactory())
-            .withSigningRequired(false)
-            .withDfsEnabled(false)
-            .withMultiProtocolNegotiate(false)
-            .withBufferSize(DEFAULT_BUFFER_SIZE)
-            .withTransportLayerFactory(DEFAULT_TRANSPORT_LAYER_FACTORY)
-            .withSoTimeout(DEFAULT_SO_TIMEOUT, DEFAULT_SO_TIMEOUT_UNIT)
-            .withDialects(SMB_3_1_1, SMB_3_0_2, SMB_3_0, SMB_2_1, SMB_2_0_2)
-            // order is important.  The authenticators listed first will be selected
-            .withAuthenticators(getDefaultAuthenticators())
-            .withTimeout(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_UNIT)
-            .withClientGSSContextConfig(GSSContextConfig.createDefaultConfig())
-            .withEncryptData(false);
+        Builder b = new Builder()
+                .withClientGuid(UUID.randomUUID())
+                .withSecurityProvider(getDefaultSecurityProvider())
+                .withSocketFactory(new ProxySocketFactory())
+                .withSigningRequired(false)
+                .withSigningEnabled(true)
+                .withDfsEnabled(false)
+                .withMultiProtocolNegotiate(false)
+                .withBufferSize(DEFAULT_BUFFER_SIZE)
+                .withTransportLayerFactory(DEFAULT_TRANSPORT_LAYER_FACTORY)
+                .withSoTimeout(DEFAULT_SO_TIMEOUT, DEFAULT_SO_TIMEOUT_UNIT)
+                .withDialects(SMB_3_1_1, SMB_3_0_2, SMB_3_0, SMB_2_1, SMB_2_0_2)
+                // order is important.  The authenticators listed first will be selected
+                .withAuthenticators(getDefaultAuthenticators())
+                .withTimeout(DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_UNIT)
+                .withClientGSSContextConfig(GSSContextConfig.createDefaultConfig())
+                .withEncryptData(false);
+
+        return b;
+    }
+
+    public static Builder builder(SmbConfig baseConfig) {
+        return new Builder(baseConfig);
     }
 
     private static SecurityProvider getDefaultSecurityProvider() {
@@ -115,9 +134,9 @@ public final class SmbConfig {
 
         if (!ANDROID) {
             try {
-                Object spnegoFactory = Class.forName("com.hierynomus.smbj.auth.SpnegoAuthenticator$Factory").newInstance();
+                Object spnegoFactory = Class.forName("com.hierynomus.smbj.auth.SpnegoAuthenticator$Factory").getDeclaredConstructor().newInstance();
                 authenticators.add((Factory.Named<Authenticator>)spnegoFactory);
-            } catch (InstantiationException | IllegalAccessException | ClassNotFoundException | ClassCastException e) {
+            } catch (InstantiationException | IllegalAccessException | ClassNotFoundException | ClassCastException | NoSuchMethodException | InvocationTargetException e) {
                 throw new SMBRuntimeException(e);
             }
         }
@@ -128,6 +147,7 @@ public final class SmbConfig {
 
     private SmbConfig() {
         dialects = EnumSet.noneOf(SMB2Dialect.class);
+        random = new SecureRandom();
         authenticators = new ArrayList<>();
     }
 
@@ -139,6 +159,7 @@ public final class SmbConfig {
         random = other.random;
         clientGuid = other.clientGuid;
         signingRequired = other.signingRequired;
+        signingEnabled = other.signingEnabled;
         dfsEnabled = other.dfsEnabled;
         securityProvider = other.securityProvider;
         readBufferSize = other.readBufferSize;
@@ -152,7 +173,7 @@ public final class SmbConfig {
         useMultiProtocolNegotiate = other.useMultiProtocolNegotiate;
         clientGSSContextConfig = other.clientGSSContextConfig;
         encryptData = other.encryptData;
-        workStationName = other.workStationName;
+        ntlmConfig = other.ntlmConfig;
     }
 
     public Random getRandomProvider() {
@@ -183,6 +204,16 @@ public final class SmbConfig {
         return signingRequired;
     }
 
+    /**
+     * Whether the client should sign messages to the server.  When message signing is enabled the client will sign messages to the server.
+     */
+    public boolean isSigningEnabled() {
+        return signingEnabled;
+    }
+
+    /**
+     * Whether the client should use the DFS protocol.
+     */
     public boolean isDfsEnabled() {
         return dfsEnabled;
     }
@@ -235,8 +266,17 @@ public final class SmbConfig {
         return encryptData;
     }
 
+    /**
+     * Get the work station name to be used in the NTLM authentication.
+     *
+     * @deprecated Moved into getNtlmConfig().getWorkStationName()
+     */
     public String getWorkStationName() {
-        return workStationName;
+        return getNtlmConfig().getWorkstationName();
+    }
+
+    public NtlmConfig getNtlmConfig() {
+        return ntlmConfig;
     }
 
     public Set<SMB2GlobalCapability> getClientCapabilities() {
@@ -255,9 +295,16 @@ public final class SmbConfig {
 
     public static class Builder {
         private SmbConfig config;
+        private NtlmConfig.Builder ntlmConfigBuilder;
 
         Builder() {
             config = new SmbConfig();
+            ntlmConfigBuilder = NtlmConfig.builder(config.random);
+        }
+
+        Builder(SmbConfig baseConfig) {
+            config = new SmbConfig(baseConfig);
+            ntlmConfigBuilder = NtlmConfig.builder(config.ntlmConfig);
         }
 
         public Builder withRandomProvider(Random random) {
@@ -333,6 +380,11 @@ public final class SmbConfig {
 
         public Builder withSigningRequired(boolean signingRequired) {
             config.signingRequired = signingRequired;
+            return this;
+        }
+
+        public Builder withSigningEnabled(boolean signingEnabled) {
+            config.signingEnabled = signingEnabled;
             return this;
         }
 
@@ -420,9 +472,19 @@ public final class SmbConfig {
                 throw new IllegalStateException("At least one SMB dialect should be specified");
             }
 
+            if (config.signingRequired && !config.signingEnabled) {
+                throw new IllegalStateException("If signing is required, it should also be enabled");
+            }
+
+            if (!config.signingEnabled && SMB2Dialect.supportsSmb3x(config.dialects)) {
+                throw new IllegalStateException("Signing cannot be disabled when using SMB3.x dialects");
+            }
+
             if (config.encryptData && !SMB2Dialect.supportsSmb3x(config.dialects)) {
                 throw new IllegalStateException("If encryption is enabled, at least one dialect should be SMB3.x compatible");
             }
+
+            config.ntlmConfig = ntlmConfigBuilder.build();
 
             return new SmbConfig(config);
         }
@@ -450,9 +512,19 @@ public final class SmbConfig {
             return this;
         }
 
+        /**
+         * Set the workstation name to be used in the NTLM authentication.
+         *
+         * @deprecated Moved into
+         *             withNtlmConfig(NtlmConfig.builder().withWorkstationName(..).build())
+         */
         public Builder withWorkStationName(String workStationName) {
-            config.workStationName = workStationName;
+            ntlmConfigBuilder.withWorkstationName(workStationName);
             return this;
+        }
+
+        public NtlmConfig.Builder withNtlmConfig() {
+            return ntlmConfigBuilder;
         }
     }
 }

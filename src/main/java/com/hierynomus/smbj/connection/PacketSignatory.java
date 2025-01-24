@@ -15,25 +15,29 @@
  */
 package com.hierynomus.smbj.connection;
 
-import com.hierynomus.mssmb2.SMB2Dialect;
+import static com.hierynomus.mssmb2.SMB2MessageFlag.SMB2_FLAGS_SIGNED;
+import static com.hierynomus.mssmb2.SMB2PacketHeader.EMPTY_SIGNATURE;
+import static com.hierynomus.mssmb2.SMB2PacketHeader.SIGNATURE_OFFSET;
+import static com.hierynomus.mssmb2.SMB2PacketHeader.SIGNATURE_SIZE;
+import static com.hierynomus.mssmb2.SMB2PacketHeader.STRUCTURE_SIZE;
+
+import java.util.Arrays;
+
+import javax.crypto.SecretKey;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.hierynomus.mssmb2.SMB2Packet;
 import com.hierynomus.mssmb2.SMB2PacketData;
 import com.hierynomus.mssmb2.SMB2PacketHeader;
-import com.hierynomus.mssmb2.SMB2Packet;
 import com.hierynomus.protocol.commons.buffer.Buffer;
 import com.hierynomus.security.Mac;
 import com.hierynomus.security.SecurityException;
 import com.hierynomus.security.SecurityProvider;
 import com.hierynomus.smb.SMBBuffer;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.crypto.SecretKey;
-import java.util.Arrays;
-
-import static com.hierynomus.mssmb2.SMB2PacketHeader.*;
-import static com.hierynomus.mssmb2.SMB2MessageFlag.SMB2_FLAGS_SIGNED;
-
-public class PacketSignatory {
+public class PacketSignatory implements Signatory {
     private static final Logger logger = LoggerFactory.getLogger(PacketSignatory.class);
 
     private SecurityProvider securityProvider;
@@ -42,9 +46,7 @@ public class PacketSignatory {
         this.securityProvider = securityProvider;
     }
 
-    void init() {
-    }
-
+    @Override
     public SMB2Packet sign(SMB2Packet packet, SecretKey secretKey) {
         if (secretKey != null) {
             return new SignedPacketWrapper(packet, secretKey);
@@ -55,6 +57,7 @@ public class PacketSignatory {
     }
 
     // TODO make session a packet handler which wraps the incoming packets
+    @Override
     public boolean verify(SMB2PacketData packet, SecretKey secretKey) {
         try {
             SMBBuffer buffer = packet.getDataBuffer();

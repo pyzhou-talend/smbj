@@ -31,7 +31,7 @@ import java.util.Arrays;
 /**
  * 3.2.5.1.1 Decrypting the Message
  * <p>
- * This section is applicable for only the SMB 3.x dialect family.<149>
+ * This section is applicable for only the SMB 3.x dialect family.&lt;149&gt;
  * <p>
  * The client MUST perform the following:
  * <p>
@@ -64,7 +64,7 @@ import java.util.Arrays;
  * first SMB2 header is not equal to the SessionId field in SMB2 TRANSFORM_HEADER of response,
  * the client MUST discard the message.</li>
  * <li>For each response in a compounded response, if the SessionId field of SMB2 header is not equal to the
- * SessionId field in the SMB2 TRANSFORM_HEADER, the client SHOULD<150> discard the entire compounded response
+ * SessionId field in the SMB2 TRANSFORM_HEADER, the client SHOULD&lt;150&gt; discard the entire compounded response
  * and stop processing.</li>
  * </ul>
  * </li>
@@ -75,7 +75,7 @@ import java.util.Arrays;
  * first SMB2 header is not equal to the SessionId field in SMB2 TRANSFORM_HEADER of response,
  * the client MUST discard the message.</li>
  * <li>For each response in a compounded response, if the SessionId field of SMB2 header is not equal to the
- * SessionId field in the SMB2 TRANSFORM_HEADER, the client SHOULD<151> discard the entire compounded response
+ * SessionId field in the SMB2 TRANSFORM_HEADER, the client SHOULD&lt;151&gt; discard the entire compounded response
  * and stop processing.</li>
  * </ul>
  * </li>
@@ -117,13 +117,13 @@ public class SMB3DecryptingPacketHandler extends AbstractIncomingPacketHandler {
         byte[] decrypted = encryptor.decrypt(data, session.getSessionContext().getDecryptionKey());
 
         byte[] decryptedProtocolId = Arrays.copyOf(decrypted, 4);
-        if (Arrays.equals(decryptedProtocolId, SMB2TransformHeader.ENCRYPTED_PROTOCOL_ID)) {
+        if (SMB2TransformHeader.isEncrypted(decryptedProtocolId)) {
             logger.error("Encountered a nested encrypted packet in packet {}, disconnecting the transport", packetData);
             throw new TransportException("Cannot nest an encrypted packet in encrypted packet " + packetData);
-        } else if (Arrays.equals(decryptedProtocolId, SMB2CompressionTransformHeader.COMPRESSED_PROTOCOL_ID)) {
+        } else if (SMB2CompressionTransformHeader.isCompressed(decryptedProtocolId)) {
             handleCompressedPacket(packetData, decrypted);
             return;
-        } else if (Arrays.equals(decryptedProtocolId, SMB2PacketHeader.PROTOCOL_ID)) {
+        } else if (SMB2PacketHeader.isPacketHeader(decryptedProtocolId)) {
             handleSMB2Packet(decrypted, data);
             return;
         } else {

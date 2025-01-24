@@ -18,8 +18,8 @@ package com.hierynomus.smbj.connection.packet;
 import com.hierynomus.mssmb2.DeadLetterPacketData;
 import com.hierynomus.mssmb2.SMB2PacketData;
 import com.hierynomus.protocol.transport.TransportException;
-import com.hierynomus.smbj.connection.PacketSignatory;
 import com.hierynomus.smbj.connection.SessionTable;
+import com.hierynomus.smbj.connection.Signatory;
 import com.hierynomus.smbj.session.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,14 +62,14 @@ import static com.hierynomus.mssmb2.SMB2MessageFlag.SMB2_FLAGS_SIGNED;
  * is not an SMB2 OPLOCK_BREAK notification, the client MUST discard the received message and do no further
  * processing for it. The client MAY also choose to disconnect the connection. If there is no SessionId, if the
  * session is not found, or if Session.SigningRequired is FALSE, the client continues processing on the packet,
- * as specified in subsequent sections.<152>
+ * as specified in subsequent sections.&lt;152&gt;
  */
 public class SMB2SignatureVerificationPacketHandler extends SMB2PacketHandler {
     private static final Logger logger = LoggerFactory.getLogger(SMB2SignatureVerificationPacketHandler.class);
     private SessionTable sessionTable;
-    private PacketSignatory signatory;
+    private Signatory signatory;
 
-    public SMB2SignatureVerificationPacketHandler(SessionTable sessionTable, PacketSignatory signatory) {
+    public SMB2SignatureVerificationPacketHandler(SessionTable sessionTable, Signatory signatory) {
         this.sessionTable = sessionTable;
         this.signatory = signatory;
     }

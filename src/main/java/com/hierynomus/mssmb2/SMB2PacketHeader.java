@@ -22,6 +22,8 @@ import com.hierynomus.smbj.common.Check;
 
 import static com.hierynomus.protocol.commons.EnumWithValue.EnumUtils.isSet;
 
+import java.util.Arrays;
+
 /**
  * [MS-SMB2] 2.2.1 SMB2 Packet Header
  */
@@ -30,7 +32,7 @@ public class SMB2PacketHeader implements SMBHeader {
     public static final int STRUCTURE_SIZE = 64;
     public static final int SIGNATURE_OFFSET = 48;
     public static final int SIGNATURE_SIZE = 16;
-    public static final byte[] PROTOCOL_ID = {(byte) 0xFE, 'S', 'M', 'B'};
+    private static final byte[] PROTOCOL_ID = {(byte) 0xFE, 'S', 'M', 'B'};
 
     private SMB2Dialect dialect;
     private int creditCharge = 1;
@@ -105,7 +107,7 @@ public class SMB2PacketHeader implements SMBHeader {
         this.messageId = messageId;
     }
 
-    void setMessageType(SMB2MessageCommandCode messageType) {
+    public void setMessageType(SMB2MessageCommandCode messageType) {
         this.message = messageType;
     }
 
@@ -149,8 +151,16 @@ public class SMB2PacketHeader implements SMBHeader {
         this.creditRequest = creditRequest;
     }
 
+    public int getCreditRequest() {
+        return creditRequest;
+    }
+
     public int getCreditResponse() {
         return creditResponse;
+    }
+
+    public void setCreditResponse(int creditResponse) {
+        this.creditResponse = creditResponse;
     }
 
     public void setAsyncId(long asyncId) {
@@ -256,5 +266,9 @@ public class SMB2PacketHeader implements SMBHeader {
 
     public void setMessageEndPosition(int messageEndPosition) {
         this.messageEndPosition = messageEndPosition;
+    }
+
+    public static boolean isPacketHeader(byte[] header) {
+        return Arrays.equals(PROTOCOL_ID, header);
     }
 }

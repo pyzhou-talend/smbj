@@ -112,6 +112,7 @@ public class SMBClient implements Closeable {
         synchronized (this) {
             String hostPort = event.getHostname() + ":" + event.getPort();
             connectionTable.remove(hostPort);
+            serverList.unregister(event.getHostname());
             logger.debug("Connection to << {} >> closed", hostPort);
         }
     }
@@ -123,7 +124,7 @@ public class SMBClient implements Closeable {
         logger.info("Going to close all remaining connections");
         for (Connection connection : connectionTable.values()) {
             try {
-                connection.close();
+                connection.close(true);
             } catch (Exception e) {
                 logger.debug("Error closing connection to host {}", connection.getRemoteHostname());
                 logger.debug("Exception was: ", e);

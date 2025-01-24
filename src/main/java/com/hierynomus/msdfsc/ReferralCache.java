@@ -30,8 +30,8 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  * A hit on a ReferralCache entry indicates that the path in a name resolution
  * operation is a DFS Root, DFS link, or a SYSVOL/NETLOGON share. A
  * ReferralCache entry conceptually contains entries indexed by a DFS path
- * prefix, DFSPathPrefix. An entry is a tuple of the form <DFSPathPrefix,
- * RootOrLink, Interlink, TTL, TargetFailback, TargetHint, TargetList>.
+ * prefix, DFSPathPrefix. An entry is a tuple of the form {@code <DFSPathPrefix,
+ * RootOrLink, Interlink, TTL, TargetFailback, TargetHint, TargetList>}.
  * DFSPathPrefix is the DFS path that corresponds to a DFS root or a DFS link,
  * and is the same as the string pointed to by the DFSPathOffset of a
  * DFS_REFERRAL_V2, DFS_REFERRAL_V3 or DFS_REFERRAL_V4 referral entry.
@@ -50,9 +50,9 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
  * ReferralCache entry refresh operation while permitting the use of the
  * ReferralCache entry; the hard time-out limit can be used to fail any
  * operation using the ReferralCache entry if all attempts to refresh it
- * fail.<4> TargetHint identifies a target in TargetList that was last
+ * fail.&lt;4&gt; TargetHint identifies a target in TargetList that was last
  * successfully used by the DFS client. TargetList consists of tuples of the
- * form <TargetPath, TargetSetBoundary>, where TargetPath is the string pointed
+ * form {@code <TargetPath, TargetSetBoundary>}, where TargetPath is the string pointed
  * to by the NetworkAddressOffset field (as specified in sections 2.2.5.2,
  * 2.2.5.3, and 2.2.5.4). TargetSetBoundary is only present in V4 referrals and
  * reflects the value from the TargetSetBoundary of the referral entry (as
@@ -63,15 +63,15 @@ public class ReferralCache {
     private ReferralCacheNode cacheRoot = new ReferralCacheNode("<root>");
 
     public static class TargetSetEntry {
-        final String targetPath;
+        final DFSPath targetPath;
         final boolean targetSetBoundary;
 
         public TargetSetEntry(String targetPath, boolean targetSetBoundary) {
-            this.targetPath = targetPath;
+            this.targetPath = new DFSPath(targetPath);
             this.targetSetBoundary = targetSetBoundary;
         }
 
-        public String getTargetPath() {
+        public DFSPath getTargetPath() {
             return targetPath;
         }
 
@@ -196,7 +196,7 @@ public class ReferralCache {
 
     }
 
-    private static class ReferralCacheNode {
+    static class ReferralCacheNode {
         static final AtomicReferenceFieldUpdater<ReferralCacheNode, ReferralCacheEntry> ENTRY_UPDATER = AtomicReferenceFieldUpdater.newUpdater(ReferralCacheNode.class, ReferralCacheEntry.class, "entry");
 
         private final String pathComponent;
@@ -249,6 +249,14 @@ public class ReferralCache {
         void clear() {
             this.childNodes.clear();
             ENTRY_UPDATER.set(this, null);
+        }
+
+        String getPathComponent() {
+            return pathComponent;
+        }
+
+        Map<String, ReferralCacheNode> getChildNodes() {
+            return childNodes;
         }
     }
 }

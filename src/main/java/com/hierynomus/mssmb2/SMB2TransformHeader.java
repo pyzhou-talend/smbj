@@ -15,6 +15,8 @@
  */
 package com.hierynomus.mssmb2;
 
+import java.util.Arrays;
+
 import com.hierynomus.protocol.commons.buffer.Buffer;
 import com.hierynomus.smb.SMBBuffer;
 import com.hierynomus.smb.SMBHeader;
@@ -109,5 +111,9 @@ public class SMB2TransformHeader implements SMBHeader {
 
     public long getSessionId() {
         return sessionId;
+    }
+
+    public static boolean isEncrypted(byte[] header) {
+        return Arrays.equals(ENCRYPTED_PROTOCOL_ID, header);
     }
 }
