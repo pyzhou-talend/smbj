@@ -124,7 +124,7 @@ public class SMBClient implements Closeable {
         logger.info("Going to close all remaining connections");
         for (Connection connection : connectionTable.values()) {
             try {
-                connection.close();
+                connection.close(true);
             } catch (Exception e) {
                 logger.debug("Error closing connection to host {}", connection.getRemoteHostname());
                 logger.debug("Exception was: ", e);

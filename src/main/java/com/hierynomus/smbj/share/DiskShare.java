@@ -93,27 +93,28 @@ public class DiskShare extends Share {
             return new SMB2CreateResponseContext(resp, path, this);
         } catch (PathResolveException e) {
             throw new SMBApiException(e.getStatusCode(), SMB2MessageCommandCode.SMB2_CREATE,
-                    "Cannot resolve path " + path, e);
+                "Cannot resolve path " + path, e);
         }
     }
 
     private SMB2CreateResponseContext resolveAndCreateFile(final SmbPath path,
-            final SMB2ImpersonationLevel impersonationLevel, final Set<AccessMask> accessMask,
-            final Set<FileAttributes> fileAttributes, final Set<SMB2ShareAccess> shareAccess,
-            final SMB2CreateDisposition createDisposition, final Set<SMB2CreateOptions> createOptions) {
+                                                           final SMB2ImpersonationLevel impersonationLevel, final Set<AccessMask> accessMask,
+                                                           final Set<FileAttributes> fileAttributes, final Set<SMB2ShareAccess> shareAccess,
+                                                           final SMB2CreateDisposition createDisposition, final Set<SMB2CreateOptions> createOptions) {
         try {
-            SMB2CreateResponseContext target = resolver.resolve(session, path, new PathResolver.ResolveAction<SMB2CreateResponseContext>(){
+            SMB2CreateResponseContext target = resolver.resolve(session, path, new PathResolver.ResolveAction<SMB2CreateResponseContext>() {
                 @Override
                 public SMB2CreateResponseContext apply(SmbPath target) {
                     DiskShare resolvedShare = rerouteIfNeeded(path, target);
                     return resolvedShare.createFileAndResolve(target, impersonationLevel, accessMask, fileAttributes,
-                            shareAccess, createDisposition, createOptions);                }
+                        shareAccess, createDisposition, createOptions);
+                }
             });
 
             return target;
         } catch (PathResolveException pre) {
             throw new SMBApiException(pre.getStatus().getValue(), SMB2MessageCommandCode.SMB2_CREATE,
-                    "Cannot resolve path " + path, pre);
+                "Cannot resolve path " + path, pre);
         }
     }
 
@@ -256,7 +257,7 @@ public class DiskShare extends Share {
      */
     public <I extends FileDirectoryQueryableInformation> List<I> list(String path, Class<I> informationClass, String searchPattern, EnumSet<AccessMask> accessMask) {
         Directory d = openDirectory(path,
-                accessMask == null ? of(FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_EA) : accessMask,
+            accessMask == null ? of(FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_EA) : accessMask,
             null, ALL, FILE_OPEN, null);
         try {
             return d.list(informationClass, searchPattern);
@@ -405,37 +406,38 @@ public class DiskShare extends Share {
         if (path == null || path.isEmpty()) {
             throw new IllegalArgumentException("rmdir: path should be non-null and non-empty");
         }
-
-        if (recursive) {
-            List<FileIdBothDirectoryInformation> list = list(path);
-            for (FileIdBothDirectoryInformation fi : list) {
-                if (fi.getFileName().equals(".") || fi.getFileName().equals("..")) {
-                    continue;
+        try {
+            if (recursive) {
+                List<FileIdBothDirectoryInformation> list = list(path);
+                for (FileIdBothDirectoryInformation fi : list) {
+                    if (fi.getFileName().equals(".") || fi.getFileName().equals("..")) {
+                        continue;
+                    }
+                    String childPath = path + "\\" + fi.getFileName();
+                    if (!EnumWithValue.EnumUtils.isSet(fi.getFileAttributes(), FILE_ATTRIBUTE_DIRECTORY)) {
+                        rm(childPath);
+                    } else {
+                        rmdir(childPath, true);
+                    }
                 }
-                String childPath = path + "\\" + fi.getFileName();
-                if (!EnumWithValue.EnumUtils.isSet(fi.getFileAttributes(), FILE_ATTRIBUTE_DIRECTORY)) {
-                    rm(childPath);
-                } else {
-                    rmdir(childPath, true);
+                rmdir(path, false);
+            } else {
+                try (DiskEntry e = open(
+                    path,
+                    of(DELETE),
+                    of(FILE_ATTRIBUTE_DIRECTORY),
+                    of(FILE_SHARE_DELETE, FILE_SHARE_WRITE, FILE_SHARE_READ),
+                    FILE_OPEN,
+                    of(FILE_DIRECTORY_FILE)
+                )) {
+                    e.deleteOnClose();
                 }
             }
-            rmdir(path, false);
-        } else {
-            try (DiskEntry e = open(
-                path,
-                of(DELETE),
-                of(FILE_ATTRIBUTE_DIRECTORY),
-                of(FILE_SHARE_DELETE, FILE_SHARE_WRITE, FILE_SHARE_READ),
-                FILE_OPEN,
-                of(FILE_DIRECTORY_FILE)
-            )) {
-                e.deleteOnClose();
-            } catch (SMBApiException sae) {
-                if (ALREADY_DELETED_STATUS_HANDLER.isSuccess(sae.getStatusCode())) {
-                    return;
-                }
-                throw sae;
+        } catch (SMBApiException sae) {
+            if (ALREADY_DELETED_STATUS_HANDLER.isSuccess(sae.getStatusCode())) {
+                return;
             }
+            throw sae;
         }
     }
 
@@ -467,7 +469,8 @@ public class DiskShare extends Share {
     /**
      * The SecurityDescriptor(MS-DTYP 2.4.6 SECURITY_DESCRIPTOR) for the Given Path
      */
-    public SecurityDescriptor getSecurityInfo(String path, Set<SecurityInformation> securityInfo) throws SMBApiException {
+    public SecurityDescriptor getSecurityInfo(String path, Set<SecurityInformation> securityInfo) throws
+        SMBApiException {
         EnumSet<AccessMask> accessMask = of(READ_CONTROL);
         if (securityInfo.contains(SecurityInformation.SACL_SECURITY_INFORMATION)) {
             accessMask.add(ACCESS_SYSTEM_SECURITY);
@@ -481,7 +484,8 @@ public class DiskShare extends Share {
     /**
      * The SecurityDescriptor(MS-DTYP 2.4.6 SECURITY_DESCRIPTOR) for the Given FileId
      */
-    public SecurityDescriptor getSecurityInfo(SMB2FileId fileId, Set<SecurityInformation> securityInfo) throws SMBApiException {
+    public SecurityDescriptor getSecurityInfo(SMB2FileId fileId, Set<SecurityInformation> securityInfo) throws
+        SMBApiException {
 
         byte[] outputBuffer = queryInfo(fileId, SMB2_0_INFO_SECURITY, securityInfo, null, null).getOutputBuffer();
         try {
@@ -494,12 +498,13 @@ public class DiskShare extends Share {
     /**
      * The SecurityDescriptor(MS-DTYP 2.4.6 SECURITY_DESCRIPTOR) for the Given FileId
      */
-    public void setSecurityInfo(String path, Set<SecurityInformation> securityInfo, SecurityDescriptor securityDescriptor) throws SMBApiException {
+    public void setSecurityInfo(String path, Set<SecurityInformation> securityInfo, SecurityDescriptor
+        securityDescriptor) throws SMBApiException {
         Set<AccessMask> accessMask = noneOf(AccessMask.class);
         if (securityInfo.contains(SecurityInformation.SACL_SECURITY_INFORMATION)) {
             accessMask.add(ACCESS_SYSTEM_SECURITY);
         }
-        if (securityInfo.contains(SecurityInformation.OWNER_SECURITY_INFORMATION) || securityInfo.contains(SecurityInformation. GROUP_SECURITY_INFORMATION)) {
+        if (securityInfo.contains(SecurityInformation.OWNER_SECURITY_INFORMATION) || securityInfo.contains(SecurityInformation.GROUP_SECURITY_INFORMATION)) {
             accessMask.add(WRITE_OWNER);
         }
         if (securityInfo.contains(SecurityInformation.DACL_SECURITY_INFORMATION)) {
@@ -514,7 +519,8 @@ public class DiskShare extends Share {
     /**
      * The SecurityDescriptor(MS-DTYP 2.4.6 SECURITY_DESCRIPTOR) for the Given FileId
      */
-    public void setSecurityInfo(SMB2FileId fileId, Set<SecurityInformation> securityInfo, SecurityDescriptor securityDescriptor) throws SMBApiException {
+    public void setSecurityInfo(SMB2FileId fileId, Set<SecurityInformation> securityInfo, SecurityDescriptor
+        securityDescriptor) throws SMBApiException {
         SMBBuffer buffer = new SMBBuffer();
         securityDescriptor.write(buffer);
 
@@ -534,7 +540,7 @@ public class DiskShare extends Share {
 
     /**
      * A return object for the {@link #createFileAndResolve(SmbPath, SMB2ImpersonationLevel, Set, Set, Set, SMB2CreateDisposition, Set)} call.
-     *
+     * <p>
      * This object wraps the {@link SMB2CreateResponse} and the actual {@link Share} which generated it if the path needed to be resolved.
      */
     static class SMB2CreateResponseContext {

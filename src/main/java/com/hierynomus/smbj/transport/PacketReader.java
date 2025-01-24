@@ -42,7 +42,7 @@ public abstract class PacketReader<D extends PacketData<?>> implements Runnable 
             this.in = new BufferedInputStream(in);
         }
         this.handler = handler;
-        this.thread = new Thread(this, "Packet Reader for " + host);
+        this.thread = new Thread(this, "Packet Reader for " + host+", Original Thread name: "+Thread.currentThread().getName());
         this.thread.setDaemon(true);
     }
 
